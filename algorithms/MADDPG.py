@@ -4,12 +4,13 @@ import wandb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils import clip_grad_norm_
 import torch.optim as optim
 import numpy as np
 from tqdm import tqdm
 
-from utils.soft_update import update_model
-from building_blocks import Actor, Critic, ReplayMemory
+from .utils import update_model
+from .building_blocks import Actor, Critic, ReplayMemory
 
 class MADDPGAgent(nn.Module):
     def __init__(self, device, agents, obs_dim, action_dim,

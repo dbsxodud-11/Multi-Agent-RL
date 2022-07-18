@@ -94,7 +94,6 @@ class MultiAgentEnv(gym.Env):
             share_obs_dim += obs_dim
             self.observation_space.append(spaces.Box(
                 low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
-            agent.action.c = np.zeros(self.world.dim_c)
         
         self.share_observation_space = [spaces.Box(
             low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
