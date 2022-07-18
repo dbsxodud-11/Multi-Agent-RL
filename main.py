@@ -1,4 +1,4 @@
-import argparse
+import json
 
 import wandb
 import torch
@@ -9,10 +9,15 @@ from envs.mpe.scenarios import load
 from envs.mpe.environment import MultiAgentEnv
 from algorithms.MADDPG import MADDPGAgent
 
-scenario = load("simple_spread.py").Scenario()
-episode_length = 25
+with open("./config/simple_spread_maddpg.json", "r") as f:
+    config = json.load(f)
+
+env_config = config["env"]
+scenario = load(f"{env_config['name']}.py").Scenario()
+episode_length = env_config["episode_length"]
+
 # create world
-world = scenario.make_world(episode_length=episode_length, num_agents=3, num_landmarks=3)
+world = scenario.make_world(episode_length=episode_length, num_agents=env_config["num_agents"], num_landmarks=env_config["num_landmarks"])
 # create multiagent environment
 env = MultiAgentEnv(world, scenario.reset_world,
                     scenario.reward, scenario.observation, scenario.info)
@@ -20,9 +25,13 @@ env = MultiAgentEnv(world, scenario.reset_world,
 obs_dim = env.observation_space[0].shape[0]
 action_dim = env.action_space[0].n
 
-num_episodes = 100000
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = MADDPGAgent(device, [agent for agent in range(env.n)], obs_dim, action_dim)
+train_config = config["training"]
+num_episodes = train_config["num_episodes"]
+device = torch.device(f"{train_config['device']}")
+
+model_name = config["algorithm"]
+if model_name == "MADDPG":
+    model = MADDPGAgent(device, [agent for agent in range(env.n)], obs_dim, action_dim)
 
 wandb.init(project="MARL in Multi-Particle Environment",
            name=str(model))

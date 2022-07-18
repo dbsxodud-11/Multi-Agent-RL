@@ -1,0 +1,13 @@
+{
+    "env": {
+        "name": "simple_spread",
+        "episode_length": 25,
+        "num_agents": 3,
+        "num_landmarks": 3
+    },
+    "algorithm": "MADDPG",
+    "training": {
+        "num_episodes": 100000,
+        "device": "cuda"
+    }
+}
