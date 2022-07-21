@@ -1,13 +1,13 @@
 {
     "env": {
         "name": "simple_spread",
-        "episode_length": 25,
-        "num_agents": 3,
-        "num_landmarks": 3
+        "N":3,
+        "max_cycles": 25,
+        "continuous_actions": "False"
     },
-    "algorithm": "MADDPG",
+    "model_name": "MADDPG",
     "training": {
         "num_episodes": 100000,
-        "device": "cuda"
+        "lr": 1e-4
     }
 }

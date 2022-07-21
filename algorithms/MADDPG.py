@@ -10,18 +10,19 @@ import numpy as np
 from tqdm import tqdm
 
 from .utils import update_model
-from .building_blocks import Actor, Critic, ReplayMemory
+from .actor_critic import Actor, Critic
+from .replay_memory import ReplayMemory
 
 class MADDPGAgent(nn.Module):
-    def __init__(self, device, agents, obs_dim, action_dim,
-                 lr=1e-3, gamma=0.99, eps=1.0, eps_decay=0.9, eps_min=0.05, batch_size=800, tau=0.001):
+    def __init__(self, device, agents, obs_dims, action_dims, lr,
+                 gamma=0.99, eps=1.0, eps_decay=0.9, eps_min=0.05, batch_size=800, tau=0.001):
         super(MADDPGAgent, self).__init__()
 
         self.device = device
         self.agents = agents
         self.n_agents = len(self.agents)
-        self.obs_dim = obs_dim
-        self.action_dim = action_dim
+        self.obs_dims = obs_dims
+        self.action_dims = action_dims
 
         self.lr = lr
         self.gamma = gamma
@@ -33,13 +34,15 @@ class MADDPGAgent(nn.Module):
         self.step = 0
         self.decay_step = 2000
 
-        self.actor = Actor(self.obs_dim, self.action_dim).to(self.device)
-        self.target_actor = Actor(self.obs_dim, self.action_dim).to(self.device)
-        update_model(self.actor, self.target_actor, tau=1.0)
+        self.actor = nn.ModuleDict({agent: Actor(self.obs_dims[agent], self.action_dims[agent]).to(self.device) for agent in self.agents})
+        self.target_actor = nn.ModuleDict({agent: Actor(self.obs_dims[agent], self.action_dims[agent]).to(self.device) for agent in self.agents})
+        for agent in self.agents:
+            update_model(self.actor[agent], self.target_actor[agent], tau=1.0)
 
-        self.critic = Critic(self.obs_dim * self.n_agents + self.action_dim * self.n_agents, 1).to(self.device)
-        self.target_critic = Critic(self.obs_dim * self.n_agents + self.action_dim * self.n_agents, 1).to(self.device)
-        update_model(self.critic, self.target_critic, tau=1.0)
+        self.critic = nn.ModuleDict({agent: Critic(self.obs_dims[agent] * self.n_agents + self.action_dims[agent] * self.n_agents, 1).to(self.device) for agent in self.agents})
+        self.target_critic = nn.ModuleDict({agent: Critic(self.obs_dims[agent] * self.n_agents + self.action_dims[agent] * self.n_agents, 1).to(self.device) for agent in self.agents})
+        for agent in self.agents:
+            update_model(self.critic[agent], self.target_critic[agent], tau=1.0)
 
         self.mse_loss = nn.MSELoss()
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=1e-4)
@@ -52,10 +55,10 @@ class MADDPGAgent(nn.Module):
         for agent in self.agents:
             obs = torch.from_numpy(state[agent]).float().unsqueeze(0).to(self.device)
             if random.random() < self.eps:
-                action = np.zeros(self.action_dim)
-                action[random.randint(0, self.action_dim-1)] = 1.0
+                action = np.zeros(self.action_dims[agent])
+                action[random.randint(0, self.action_dims[agent]-1)] = 1.0
             else:
-                action = self.actor(obs).detach().cpu().numpy().squeeze(0)
+                action = self.actor[agent](obs).detach().cpu().numpy().squeeze(0)
             action_norm = action.argmax()
             
             actions[agent] = action
@@ -77,11 +80,11 @@ class MADDPGAgent(nn.Module):
         for target_agent in self.agents:
             joint_state = torch.cat([states[agent] for agent in self.agents], dim=-1)
             joint_actions = torch.cat([actions[agent] for agent in self.agents], dim=-1)
-            current_q_values = self.critic(torch.cat([joint_state, joint_actions], dim=-1))
+            current_q_values = self.critic[target_agent](torch.cat([joint_state, joint_actions], dim=-1))
 
             joint_next_state = torch.cat([next_states[agent] for agent in self.agents], dim=-1)
-            joint_next_actions = torch.cat([self.target_actor(next_states[agent]) for agent in self.agents], dim=-1)
-            next_q_values = self.target_critic(torch.cat([joint_next_state, joint_next_actions], dim=-1)).detach()
+            joint_next_actions = torch.cat([self.target_actor[agent](next_states[agent]) for agent in self.agents], dim=-1)
+            next_q_values = self.target_critic[target_agent](torch.cat([joint_next_state, joint_next_actions], dim=-1)).detach()
             target_q_values = rewards[target_agent] + self.gamma * next_q_values * (1 - dones[target_agent])
             # Add Normalization
             target_q_values = (target_q_values - target_q_values.mean())  / target_q_values.std()
@@ -95,19 +98,19 @@ class MADDPGAgent(nn.Module):
             joint_actions = []
             for agent in self.agents:
                 if agent == target_agent:
-                    joint_actions.append(self.actor(states[agent]))
+                    joint_actions.append(self.actor[agent](states[agent]))
                 else:
                     joint_actions.append(actions[agent])
             joint_actions = torch.cat(joint_actions, dim=-1)
 
-            policy_loss = -self.critic(torch.cat([joint_state, joint_actions], dim=1)).mean()
+            policy_loss = -self.critic[target_agent](torch.cat([joint_state, joint_actions], dim=1)).mean()
             self.actor_optimizer.zero_grad()
             policy_loss.backward()
             clip_grad_norm_(self.actor.parameters(), 10.0)
             self.actor_optimizer.step()
 
-            update_model(self.actor, self.target_actor, tau=self.tau)
-            update_model(self.critic, self.target_critic, tau=self.tau)
+            update_model(self.actor[target_agent], self.target_actor[target_agent], tau=self.tau)
+            update_model(self.critic[target_agent], self.target_critic[target_agent], tau=self.tau)
 
             total_value_loss += value_loss.item()
             total_policy_loss += policy_loss.item()
